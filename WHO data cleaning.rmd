@@ -1,0 +1,187 @@
+---
+title: "MATH2349 Semester 1, 2019"
+author: "Wei Zhang  s3759607"
+subtitle: Assignment 2
+output:
+  html_notebook: default
+---
+
+## Setup
+
+Install and load the necessary packages to reproduce the report here:
+
+```{r, echo = TRUE, message=FALSE}
+library(readr)
+library(tidyr)
+library(dplyr)
+library(Hmisc)
+library(outliers)
+
+```
+
+
+## Read WHO Data
+
+Read the WHO data using an appropriate function.
+
+```{r, echo=TRUE,message=FALSE}
+WHO <- read_csv("WHO.csv")
+```
+
+
+
+
+## Tidy Task 1:
+
+Use appropriate `tidyr` functions to reshape the WHO data set into the form given in the MATH2349_1910 Assignment_2 instructions document.
+
+
+```{r, echo=TRUE, message=FALSE}
+WHOtidy1 <- WHO %>% gather(code, value, new_sp_m014:new_rel_f65)
+WHOtidy1
+```
+
+
+
+## Tidy Task 2:
+
+The WHO data set is not in a tidy format yet. The `code` column still contains four different variables' information (see variable description section for the details). Separate the `code` column and form four new variables using appropriate `tidyr` functions. 
+
+
+```{r, echo=TRUE, message=FALSE}
+WHOtidy2 <- WHOtidy1 %>% separate(code, into = c("new","var","sexage"), sep="_") %>% separate(sexage, into = c("sex", "age"), sep=1)
+WHOtidy2
+```
+
+
+## Tidy Task 3:
+
+The WHO data set is not in a tidy format yet. The `rel`, `ep`, `sn`, and `sp` keys need to be in their own columns as we will treat each of these as a separate variable. In this step, move the `rel`, `ep`, `sn`, and `sp` keys into their own columns.
+
+
+
+```{r, echo=TRUE, message=FALSE}
+WHOtidy3 <- WHOtidy2 %>% spread(var, value)
+WHOtidy3
+```
+
+
+## Tidy Task 4: 
+
+There is one more step to tidy WHO data set. We have two categorical variables `sex` and `age`. Use `mutate()` to factorise sex and age. For age variable, you need to create labels and also order the variable. Labels would be: <15, 15-24, 25-34, 35-44, 45-54, 55-64, 65>=.
+
+```{r, echo=TRUE, message=FALSE}
+WHOtidy4 <- WHOtidy3 %>% mutate(age = factor(age, levels = c("014", "1524", "2534", "3544", "4554", "5564", "65"), ordered=TRUE, labels = c("<15", "15-24", "25-34", "35-44", "45-54", "55-64", "65>="))) %>% mutate(sex=factor(sex))
+WHOtidy4
+```
+
+## Task 5: Filter & Select
+
+
+Drop the redundant columns `iso2` and `new`, and filter any three countries from the tidy version of the WHO data set. Name this subset of the data frame as `WHO_subset`. **Show your R codes and provide the output of the `WHO_subset`. Failure to do this would result in a reduction in the mark.**
+
+
+```{r, echo=TRUE,message=FALSE}
+WHO_subset <- WHOtidy4 %>% select(-c(iso2,new)) %>% filter(country == "Ireland" | country == "Afghanistan" | country == "Italy")
+WHO_subset
+```
+
+
+
+## Read Species and Surveys data sets
+
+Read the Species and Surveys data sets using an appropriate function. Name these data frames as `species` and `surveys`, respectively.
+
+```{r, echo=TRUE, message=FALSE}
+species <- read_csv("species.csv")
+surveys <- read_csv("surveys.csv")
+
+```
+
+
+
+
+## Task 6: Join  
+
+Combine `surveys` and `species` data frames using the key variable `species_id`.
+
+```{r, echo=TRUE, message=FALSE}
+surveys_combined <- full_join(species, surveys, by="species_id")
+surveys_combined
+```
+
+
+
+## Task 7: Calculate 
+
+Using the `surveys_combined` data frame, calculate the average weight and hindfoot length of one of the species observed in each month (irrespective of the year). Make sure to exclude missing values while calculating the average. 
+
+
+
+```{r, echo=TRUE, message=FALSE}
+avg <- surveys_combined %>% filter(species_id=="DM") %>% group_by(month) %>% summarise(avg_weight=mean(weight, na.rm = TRUE), avg_hindfoot_length = mean(hindfoot_length, na.rm = TRUE))
+avg
+```
+
+
+
+## Task 8: Missing Values
+
+Select one of the years in the `surveys_combined` data frame, rename this data set as `surveys_combined_year`. Using `surveys_combined_year` data frame, find the total missing values in the `weight` column grouped by `species`. Replace the missing values in the `weight` column with the mean values of each species. Save this imputed data as `surveys_weight_imputed`. 
+
+
+```{r, echo=TRUE, message=FALSE}
+surveys_combined_1999 <- filter(surveys_combined, year==1999)
+surveys_combined_1999 %>% group_by(species) %>% summarise(sum(is.na(weight)))
+surveys_weight_imputed <- surveys_combined_1999 %>% group_by(species) %>% mutate(weight=ifelse(is.na(weight), mean(weight, na.rm = TRUE), weight))
+surveys_weight_imputed
+```
+
+
+
+
+
+## Task 9: Inconsistencies or Special Values
+
+Inspect the `weight` column in `surveys_weight_imputed` data frame for any further inconsistencies or special values (i.e., NaN, Inf, -Inf) . 
+According to the R code output, there is no infinite value base on the output. However, the 'weight' column in 'surveys_weight_imputed' has 14 values as "Not A Number" under 'harrisi' species. 
+Looking back at the 'surveys_weight-1999' data frame, 'harrisi' species has 14 missing values and nil finite values. When creating 'surveys_weight_imputed' data frame, the mean of all missing values did not result in any finite number - R returned 'NaN'.
+
+```{r, echo=TRUE, message=FALSE}
+is.nan(surveys_weight_imputed$weight)
+is.infinite(surveys_weight_imputed$weight)
+harrisi <- filter(surveys_combined_1999, species=="harrisi") 
+is.finite(harrisi$weight)
+```
+
+
+
+
+## Task 10: Outliers
+
+Using the `surveys_combined` data frame, inspect the variable hindfoot length for possible univariate outliers. 
+Boxplot method was used to detect 2 outlier sitting above the upper fence.
+I used the Capping method to replace the outliers with the nearest neighbours - the value of 95th percentile.
+By comparing the summary of capped and original hindfoot length values, it's easy to see that Max value was changed after capping.
+ 
+
+```{r, echo=TRUE, message=FALSE}
+surveys_combined$hindfoot_length %>% boxplot(main="Box Plot of Hindfoot Length Value", ylab="mean(Hindfoot Length)")
+
+cap <- function(x){
+  quantiles <- quantile(x, c(0.05,0.25, 0.75, 0.95)) 
+  x[x < quantiles[2]-1.5*IQR(x)] <- quantiles[1] 
+  x[x > quantiles[3]+1.5*IQR(x)] <- quantiles[4] 
+  x}
+
+surveys_combined_hl_cap <- surveys_combined$hindfoot_length[complete.cases(surveys_combined$hindfoot_length)] %>% cap()
+
+summary(surveys_combined_hl_cap)
+summary(surveys_combined$hindfoot_length)
+```
+
+
+
+
+<br>
+<br>
