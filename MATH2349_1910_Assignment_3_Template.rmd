@@ -1,0 +1,183 @@
+---
+title: "MATH2349 Semester 1, 2019"
+author: "Wei Zhang   s3759607"
+subtitle: Assignment 3 - HR Analytics Data Preprocessing
+output:
+  html_notebook: default
+---
+
+
+## RPubs link:
+
+This work is publish on  http://rpubs.com/s3759607/502192
+
+## Required packages 
+Load the required packages.
+
+```{r, warning=FALSE, message=FALSE}
+library(readr)
+library(tidyr)
+library(dplyr)
+library(editrules)
+library(MVN)
+```
+
+
+## Executive Summary 
+As a HR analyst, I need to pre process this data before the analysis.
+
+First, I merged the 3 datasets into one by a common variable (EmployID) after importing the datasets. This will be the dataset I use for the analysis later on.
+
+Second, I converted some of the charater and numeric values to factors. This is based on my understanding of the datasets.
+After assessing the dataset, I decide to leave it as it is as it's already in a tidy format.
+
+Third, I created 2 new variables and added them to this dataset while preserving the existing dataset. This will become useful for my analysis later on.
+
+Then, missing values are identified in each column in the dataset. I decide to delete rows with missing values because the number of missing values are relatively small. Also, inconsistencies and obvious errors are scanned under my "Rule" file I created. 
+
+Next, mvn function was used to detect outliers among the multivariate attributes. 154 outliers were found in total, which is relatively small compared to the size of the dataset. I decided to delete the outliers and analyse the final dataset.
+
+Last but not least, variable "MonthlyIncome" was transformed into normal distribution using transformation techiniques.
+
+Now the dataset is ready for analysis.
+
+## Data 
+The 3 datasets are from https://www.kaggle.com/vjchoudhary7/hr-analytics-case-study.
+Company XYZ has around 15% of attrition every year, which is not good for the company projects. Therefore, HR analysts want to analyse the datasets and understand what's causing this level of attrition. By doing this, HR can make recommendations to the management regarding how to keep their employees.
+Three datasets were collected from around 4000 employees in the company at a given point of time.
+
+* General_data contains 24 variables. They are general information about employees including age, attrition, department, education, gender, monthly income, standard hours, years at company, etc.
+
+* Employee_survey_data has the information about survey results. It only contains 4 variables including employeeID, Work Environment Satisfaction Level, Job Satisfaction Level and Work life balance level.
+
+* Manager_survey_data contains employees' feedback about their managers. Only 3 variables are in this dataset. They are employeeID,Job Involvement Level and Performance rating for last year.
+All three datasets share a common variable - employeeID. They are merged together using full_join function.
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+general <- read_csv("general_data.csv")
+head(general)
+survey <- read_csv("employee_survey_data.csv")
+head(survey)
+feedback <- read_csv("manager_survey_data.csv")
+head(feedback)
+full1 <- full_join(general, survey, by = "EmployeeID")
+full <- full_join(full1, feedback, by = "EmployeeID")
+# All 3 datasets are joined
+head(full)
+```
+
+## Understand 
+The merged dataset "full" is used for analysis. It contains a mixture of data types including numerics, characters, factors etc.
+In this step, data type conversions are performed to convert some numeric and character variables to factors. 
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+full$Attrition <- factor(full$Attrition, levels = c("Yes", "No"))
+full$Education <- factor(full$Education, levels = c(1, 2, 3, 4, 5), labels = c("Below College", "College", "Bachelor", "Master", "Doctor"), ordered=TRUE)
+full$Gender <- factor(full$Gender, levels = c("Male", "Female"))
+full$StockOptionLevel <- factor(full$StockOptionLevel, levels = c(0, 1, 2, 3))
+full$JobLevel <- factor(full$JobLevel, levels = c(1, 2, 3, 4, 5), ordered = TRUE)
+full$MaritalStatus <- factor(full$MaritalStatus, levels = c("Married", "Single", "Divorced"))
+full$Over18 <- factor(full$Over18, levels = c("Y", "N"))
+full$EnvironmentSatisfaction <- factor(full$EnvironmentSatisfaction, levels = c(1, 2, 3, 4), labels = c("Low", "Medium", "High", "Very High"), ordered = TRUE)
+full$JobSatisfaction <- factor(full$JobSatisfaction, levels = c(1, 2, 3, 4), labels = c("Low", "Medium", "High", "Very High"), ordered = TRUE)
+full$WorkLifeBalance <- factor(full$WorkLifeBalance, levels = c(1, 2, 3, 4), labels = c("Bad", "Good", "Better", "Best"), ordered = TRUE)
+full$JobInvolvement <- factor(full$JobInvolvement, levels = c(1, 2, 3, 4), labels = c("Low", "Medium", "High", "Very High"), ordered = TRUE) 
+full$PerformanceRating <- factor(full$PerformanceRating, levels = c(1, 2, 3, 4), labels = c("Low", "Good", "Excellent", "Outstanding"), ordered = TRUE)
+```
+
+
+##	Tidy & Manipulate Data I 
+This data is in the tidy format. No need to reshape the data.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+
+```
+
+##	Tidy & Manipulate Data II 
+Assuming "YearsAtCompany" is consecutive years, a new variable "employ_age" is created to represent the age when employees started working for the company. Another variable "previous_workyears" is created to find out the years employees had worked before joining the company.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+full2 <- mutate(full, employ_age = Age - YearsAtCompany, previous_workyears = TotalWorkingYears-YearsAtCompany)
+```
+
+
+##	Scan I 
+Total number of missing values are identified in each column in the dataset. As the amount of missing data is relatively small (less than 5% of the dataset), I decide to delete rows with missing values by using na.omit function.
+To scan for inconsistencies and obvious errors, I created a text under the name of "Rule.txt". I've set some rules in this text and scanned the data using violatedEdits function.
+According to the output, nil inconsistencies found.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+sum(is.na(full2))
+colSums(is.na(full2))
+full3 <- na.omit(full2)
+
+Rule <- editfile("Rule.txt", type = "all")
+Rule
+violated <- violatedEdits(Rule, full3)
+summary(violated)
+```
+
+
+##	Scan II
+There are 15 numeric variables in this dataset. Multivariate Outlier Detection Methods can be used to detect outliers. After doing some simple ploting such as box plot to understand the variables, I decided to separate "EmployeeCount" and "Standard Hours" from my Multivariate Outlier Detection. This is because these two variables have only one value. (see the boxplot below)
+
+The Mahalanobis distance is used to detect outliers for the multivariate setting. "Education" is used as a categorical variable to subset the data. According to the output, there are 19 outliers among employees with a master's degree, 8 outliers among employees with below College degree, 9 outliers among employees with a College degree, 115 outliers among employees with a bachelor's degree and 3 outliers among employees with a doctor's degree.
+
+Because this dataset is about the information of employees from XYZ company, the outliers are most likely due to data entry error. Plus, the outlier observations are relatively small in numbers. I decide to delete the outliers in this caes. The mvn() function can identify the locations of outliers and show the new data without outliers.
+I have made the new data without outliers shown in the output.
+
+While these outliers are removed, it should be noted that theses could be relevant to the final analysis. As the purpose of this data is to identify reasons that employees are leaving the company, these outliers could be valueable. I would recommend these outliers be investigated further and readded to the dataset if they are deemed accurate.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+boxplot(full3$MonthlyIncome ~ full3$Education, main="Monthly Income by Education", ylab = "Monthly Income", xlab = "Education")
+boxplot(full3$EmployeeCount, main = "Employee Count")
+boxplot(full3$StandardHours, main = "Standard Hours")
+
+Master <- full3 %>% filter(Education == "Master") %>% select(DistanceFromHome, NumCompaniesWorked, PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear, YearsAtCompany, YearsWithCurrManager, Age, MonthlyIncome, YearsSinceLastPromotion, employ_age, previous_workyears, EmployeeID)
+results1 <- mvn(data = Master, multivariateOutlierMethod = "quan", showOutliers = TRUE, showNewData = TRUE )
+results1$multivariateOutliers
+results1$newData
+
+Bel_College <- full3 %>% filter(Education == "Below College") %>% select(DistanceFromHome, NumCompaniesWorked, PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear, YearsAtCompany, YearsWithCurrManager, Age, MonthlyIncome, YearsSinceLastPromotion, employ_age, previous_workyears, EmployeeID)
+results2 <- mvn(data = Bel_College, multivariateOutlierMethod = "quan", showOutliers = TRUE, showNewData = TRUE )
+results2$newData
+
+College <- full3 %>% filter(Education == "College") %>% select(DistanceFromHome, NumCompaniesWorked, PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear, YearsAtCompany, YearsWithCurrManager, Age, MonthlyIncome, YearsSinceLastPromotion, employ_age, previous_workyears, EmployeeID)
+results3 <- mvn(data = College, multivariateOutlierMethod = "quan", showOutliers = TRUE, showNewData = TRUE )
+results3$newData
+
+Bachelor <- full3 %>% filter(Education == "Bachelor") %>% select(DistanceFromHome, NumCompaniesWorked, PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear, YearsAtCompany, YearsWithCurrManager, Age, MonthlyIncome, YearsSinceLastPromotion, employ_age, previous_workyears, EmployeeID)
+results4 <- mvn(data = Bachelor, multivariateOutlierMethod = "quan", showOutliers = TRUE, showNewData = TRUE )
+results4$newData
+
+Doctor <- full3 %>% filter(Education == "Doctor") %>% select(DistanceFromHome, NumCompaniesWorked, PercentSalaryHike, TotalWorkingYears, TrainingTimesLastYear, YearsAtCompany, YearsWithCurrManager, Age, MonthlyIncome, YearsSinceLastPromotion, employ_age, previous_workyears, EmployeeID)
+results5 <- mvn(data = Doctor, multivariateOutlierMethod = "quan", showOutliers = TRUE, showNewData = TRUE )
+results5$newData
+
+full4 <- bind_rows(results1$newData, results2$newData, results3$newData, results4$newData, results5$newData)
+```
+
+
+##	Transform 
+I used the full4 dataset after dealing with missing values and outliers. The variable I choose to transform is "MonthlyIncome". The histogram of monthly income is right-skewed according to the output. In order to decrease the skewness and convert the distribution into a normal distribution, 3 transformation techiniques are used.
+
+* Logarithmic transformation (base 10) 
+
+* Natural logarithmic transformation
+
+* Cube root transformation
+
+From the results it is obvious to see that Logarithmic transformation (base 10) and natural logrithmic transformation work slightly better than the cube root transformation.
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+hist(full4$MonthlyIncome)
+log_income <- log10(full4$MonthlyIncome)
+hist(log_income)
+ln_income <- log(full4$MonthlyIncome)
+hist(ln_income)
+cuberoot_income <- (full4$MonthlyIncome)^(1/3)
+hist(cuberoot_income)
+```
+
+
+
+<br>
+<br>
